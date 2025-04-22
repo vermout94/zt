@@ -4,14 +4,11 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~>3.70" // Use a recent 3.x provider version
+      version = "~>3.70"
     }
   }
 }
 
 provider "azurerm" {
-  features {} // Enable AzureRM provider features (no special configuration needed)
+  features {}
 }
-
-// Note: Authenticate to Azure (e.g., via Azure CLI `az login` or environment credentials) 
-// before running Terraform. Azure for Students accounts can be used without a credit card&#8203;:contentReference[oaicite:7]{index=7}.

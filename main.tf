@@ -94,7 +94,7 @@ resource "azurerm_network_security_rule" "web_allow_http" {
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
-  source_address_prefix       = "*"  // ANY source (Internet) – in a real scenario, restrict to specific IPs&#8203;:contentReference[oaicite:9]{index=9}
+  source_address_prefix       = "*"  // ANY source (Internet) – in a real scenario, restrict to specific IPs
   destination_address_prefix  = "*"  // to any IP in this subnet
   destination_port_range      = "80" // HTTP
   source_port_range           = "*"
@@ -117,7 +117,7 @@ resource "azurerm_network_security_rule" "web_allow_ssh" {
 
 // Note: The Web subnet NSG has permissive inbound rules (HTTP/SSH from any). In practice, 
 // this should be paired with the Azure Firewall DNAT to limit true external exposure. 
-// Azure Policy/ISO standards would flag broad "Any" inbound rules&#8203;:contentReference[oaicite:10]{index=10}, so consider 
+// Azure Policy/ISO standards would flag broad "Any" inbound rules, so consider 
 // restricting source IPs. Here it's for demo purposes (simulating Internet access).
 
 // NSG Rules for DB subnet - allow SQL traffic from Web subnet ONLY, deny all else
@@ -199,7 +199,7 @@ resource "azurerm_firewall" "firewall" {
   location            = azurerm_resource_group.rg.location
 
   sku_name = "AZFW_VNet" // VNet deployment mode
-  sku_tier = "Basic"     // Use Basic SKU for cost-efficiency&#8203;:contentReference[oaicite:11]{index=11}
+  sku_tier = "Basic"     // Use Basic SKU for cost-efficiency
 
   // Firewall IP configuration (data plane)
   ip_configuration {
@@ -213,11 +213,6 @@ resource "azurerm_firewall" "firewall" {
     subnet_id            = azurerm_subnet.firewall_mgmt.id
     public_ip_address_id = azurerm_public_ip.fw_mgmt_public_ip.id
   }
-
-  // (Optional) We could attach a Firewall Policy with rule collections, but for simplicity 
-  // we will use classic rule settings below. Basic SKU supports rule collections via policy 
-  // or classic rules.
-
   tags = { Environment = "Demo" }
 }
 
@@ -268,7 +263,7 @@ resource "azurerm_firewall_nat_rule_collection" "fw_dnat" {
 }
 
 // Note: The Azure Firewall DNAT rules forward traffic from its public IP to the Web VM. 
-// The web NSG must allow these ports (it does). We also route all outbound traffic from subnets to the firewall, ensuring 
+// The web NSG must allow these ports (it does). I also route all outbound traffic from subnets to the firewall, ensuring 
 // responses and egress go through the firewall (required for DNAT symmetry and for monitoring).
 
 // --------------------------------------------------------------------------------
@@ -368,7 +363,10 @@ resource "azurerm_linux_virtual_machine" "web_vm" {
     type = "SystemAssigned"
   }
 
-  // Cloud-init script to install a web server (for testing HTTP access)
+  // Cloud-init script to install a web server (for testing HTTP access) and MariaDB client
+  // Note: This script runs on VM creation. It installs NGINX and MariaDB client,
+  // enables NGINX, and creates a test script for Zero Trust testing.
+  // The script is base64-encoded for Azure VM custom data.
   custom_data = base64encode(<<-EOT
               #!/bin/bash
               apt-get update -y
@@ -448,7 +446,7 @@ resource "azurerm_linux_virtual_machine" "db_vm" {
               mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'testuser'@'%' WITH GRANT OPTION;"
               EOT
   )
-  // (Optional) We could install a database or listener on port 1433 for testing; omitted for simplicity.
+  // (Optional) Instead could also install a listener on port 1433 for testing; omitted for simplicity.
   tags = { Role = "DatabaseServer" }
 }
 
@@ -468,8 +466,9 @@ resource "azurerm_role_assignment" "web_vm_login_role" {
   role_definition_name = "Virtual Machine Administrator Login"
   principal_id         = azurerm_linux_virtual_machine.web_vm.identity[0].principal_id
 }
-// Note: After deployment, add your Azure AD user to the VM via Azure RBAC if needed. 
-// The above assignment uses the VM's own identity (not a user). Alternatively, assign this role to your user or group at the VM scope for interactive login.
+// Note: After deployment, needed to add your Azure AD user to the VM via Azure RBAC. 
+// The above assignment uses the VM's own identity (not a user). Alternatively, 
+// you can also assign this role to your user or group at the VM scope for interactive login.
 
 // --------------------------------------------------------------------------------
 // Logging & Monitoring: Log Analytics and Diagnostic Settings
@@ -479,7 +478,9 @@ resource "azurerm_log_analytics_workspace" "logs" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
   sku                 = "PerGB2018" // Pay-as-you-go tier (suitable for low-volume demo; free tier could be used as well)
-  retention_in_days   = 30          // Retain logs for 30 days (adjustable as needed)
+  retention_in_days   = 30          // Retain logs for 30 days (adjustable as needed) 457days should be needed for GDPR
+  // Note: The free tier is limited to 5GB/month and has a 31-day retention limit.
+  // The PerGB2018 tier is pay-as-you-go and allows for longer retention (up to 730 days).
 
   tags = { Purpose = "SecurityLogs" }
 }
@@ -490,7 +491,7 @@ resource "azurerm_monitor_diagnostic_setting" "fw_diagnostics" {
   target_resource_id         = azurerm_firewall.firewall.id
   log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
 
-  // Log categories for Azure Firewall: Application, Network, and DNS proxy logs&#8203;:contentReference[oaicite:12]{index=12}
+  // Log categories for Azure Firewall: Application, Network, and DNS proxy logs
   enabled_log {
     category = "AzureFirewallApplicationRule"
   }
