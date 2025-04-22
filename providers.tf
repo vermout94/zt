@@ -1,40 +1,17 @@
-// Configure required providers (AzureRM and AzAPI) and define provider instances
+// Configure Terraform and Azure provider
 terraform {
-  required_version = ">=1.7.0"
+  required_version = ">= 1.0.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">=3.107.0" // Use AzureRM provider 3.107.0 or later (no legacy azurermv2)
-    }
-    azapi = {
-      source  = "azure/azapi"
-      version = ">=1.13.0"
+      version = "~>3.70" // Use a recent 3.x provider version
     }
   }
 }
 
 provider "azurerm" {
-  features {}
-  subscription_id = var.subscription_id
-  tenant_id       = var.tenant_id
+  features {} // Enable AzureRM provider features (no special configuration needed)
 }
 
-provider "azurerm" {
-  alias = "management"
-  features {}
-  subscription_id = var.subscription_id
-  tenant_id       = var.tenant_id
-}
-
-provider "azurerm" {
-  alias = "connectivity"
-  features {}
-  subscription_id = var.subscription_id
-  tenant_id       = var.tenant_id
-}
-
-provider "azapi" {
-  # AzAPI uses same Azure credentials (subscription/tenant) as provided above
-  subscription_id = var.subscription_id
-  tenant_id       = var.tenant_id
-}
+// Note: Authenticate to Azure (e.g., via Azure CLI `az login` or environment credentials) 
+// before running Terraform. Azure for Students accounts can be used without a credit card&#8203;:contentReference[oaicite:7]{index=7}.
