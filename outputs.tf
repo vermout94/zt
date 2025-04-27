@@ -18,3 +18,8 @@ output "log_analytics_workspace_id" {
   description = "Resource ID of Log Analytics workspace (for querying logs)."
   value       = azurerm_log_analytics_workspace.logs.id
 }
+
+output "demo_users_group_id" {
+  description = "The Object ID of the Azure AD group for demo users."
+  value       = azuread_group.demo_users.id
+}

@@ -34,3 +34,20 @@ variable "vm_size" {
   type        = string
   default     = "Standard_B1s" // use a small size to minimize cost
 }
+
+variable "subscription_id" {
+  description = "Azure Subscription ID for activity logs."
+  type        = string
+  // subscription ID stored in .tfvars file
+}
+
+variable "advisor_email" {
+  description = "Email address of the advisor user for RBAC."
+  type        = string
+  // advisor email stored in .tfvars file
+}
+variable "advisor_email_backup" {
+  description = "Backup email address of the advisor user for RBAC."
+  type        = string
+  // backup advisor email stored in .tfvars file
+}

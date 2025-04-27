@@ -15,6 +15,8 @@ override.tf.json
 .terraform.tfstate.backup
 secret.auto.tfvars
 
+commands.txt
+
 
 
 ### JetBrains template
