@@ -59,44 +59,10 @@ resource "azurerm_linux_virtual_machine" "web_vm" {
     type = "SystemAssigned"
   }
 
-  custom_data = base64encode(<<-EOT
-              #!/bin/bash
-              apt-get update -y
-              for i in {1..5}; do
-                apt-get install -y nginx mariadb-client && break
-                echo "Retrying apt install..."
-                sleep 5
-              done
-              systemctl enable nginx
-              systemctl start nginx
-
-              cat << 'EOF' > /home/${var.admin_username}/test-zero-trust.sh
-              #!/bin/bash
-              echo "=== Zero Trust Test Plan: \$(date) ==="
-              echo "[1] Testing local web server (NGINX)..."
-              curl -s http://localhost | grep -i nginx && echo "NGINX is running." || echo "NGINX check failed."
-
-              echo "[2] Testing ping to DB VM (10.0.2.4)..."
-              ping -c 2 10.0.2.4 > /dev/null && echo "Ping reachable (unexpected)" || echo "Ping blocked (expected)."
-
-              echo "[3] Testing MariaDB connectivity from Web → DB..."
-              mysql -h 10.0.2.4 -u testuser -ptestpass -e "SHOW DATABASES;" && echo "MariaDB connection successful." || echo "MariaDB connection failed."
-
-              echo "[4] Testing SSH from Web → DB VM (should be blocked)..."
-              timeout 5 nc -zv 10.0.2.4 22 && echo "SSH to DB VM succeeded (unexpected)" || echo "SSH to DB VM blocked (expected)"
-
-              echo "[5] Testing DNS resolution..."
-              dig www.microsoft.com +short || echo "DNS resolution failed"
-              echo "=== Test Plan Complete ==="
-              EOF
-
-              chmod +x /home/${var.admin_username}/test-zero-trust.sh
-              chown ${var.admin_username}:${var.admin_username} /home/${var.admin_username}/test-zero-trust.sh
-              EOT
-  )
-
-  tags = { Role = "WebServer" }
+  custom_data = base64encode(local.webvm_cloudinit)
+  tags        = { Role = "WebServer" }
 }
+
 
 resource "azurerm_linux_virtual_machine" "db_vm" {
   name                  = "DBVM"
@@ -129,22 +95,10 @@ resource "azurerm_linux_virtual_machine" "db_vm" {
     type = "SystemAssigned"
   }
 
-  custom_data = base64encode(<<-EOT
-              #!/bin/bash
-              apt-get update -y
-              apt-get install -y mariadb-server
-              systemctl enable mariadb
-              systemctl start mariadb
-              ufw disable
-              sed -i 's/bind-address.*/bind-address = 0.0.0.0/' /etc/mysql/mariadb.conf.d/50-server.cnf
-              systemctl restart mariadb
-              mysql -e "CREATE USER 'testuser'@'%' IDENTIFIED BY 'testpass';"
-              mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'testuser'@'%' WITH GRANT OPTION;"
-              EOT
-  )
-
-  tags = { Role = "DatabaseServer" }
+  custom_data = base64encode(local.dbvm_cloudinit)
+  tags        = { Role = "DBServer" }
 }
+
 
 // --------------------------------------------------------------------------------
 // Azure AD Login Extension
@@ -157,9 +111,35 @@ resource "azurerm_virtual_machine_extension" "web_aad_login" {
   type_handler_version = "1.0"
   depends_on           = [azurerm_linux_virtual_machine.web_vm]
 }
+resource "azurerm_virtual_machine_extension" "db_aad_login" {
+  name                 = "AADLoginForLinux"
+  virtual_machine_id   = azurerm_linux_virtual_machine.db_vm.id
+  publisher            = "Microsoft.Azure.ActiveDirectory"
+  type                 = "AADSSHLoginForLinux"
+  type_handler_version = "1.0"
+  depends_on           = [azurerm_linux_virtual_machine.db_vm]
+}
+
 
 resource "azurerm_role_assignment" "web_vm_login_role" {
   scope                = azurerm_linux_virtual_machine.web_vm.id
   role_definition_name = "Virtual Machine Administrator Login"
   principal_id         = azurerm_linux_virtual_machine.web_vm.identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "webvm_aad_login" {
+  scope                = azurerm_linux_virtual_machine.web_vm.id
+  role_definition_name = "Virtual Machine Administrator Login"
+  principal_id         = data.azuread_user.advisor.id
+}
+
+resource "azurerm_role_assignment" "dbvm_aad_login" {
+  scope                = azurerm_linux_virtual_machine.db_vm.id
+  role_definition_name = "Virtual Machine Administrator Login"
+  principal_id         = data.azuread_user.advisor.id
+}
+resource "azurerm_role_assignment" "db_vm_login_role" {
+  scope                = azurerm_linux_virtual_machine.db_vm.id
+  role_definition_name = "Virtual Machine Administrator Login"
+  principal_id         = azurerm_linux_virtual_machine.db_vm.identity[0].principal_id
 }

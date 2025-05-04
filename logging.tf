@@ -91,3 +91,16 @@ resource "azurerm_monitor_diagnostic_setting" "subscription_activity_logs" {
   }
 }
 
+resource "azurerm_monitor_diagnostic_setting" "fw_mysql_logging" {
+  name                       = "FirewallMySQLDiagnostics"
+  target_resource_id         = azurerm_firewall.firewall.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "AzureFirewallNetworkRule" # Important: Network rules like MySQL are logged here
+  }
+
+  metric {
+    category = "AllMetrics"
+  }
+}

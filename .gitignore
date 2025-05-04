@@ -14,6 +14,8 @@ override.tf.json
 .terraform.lock.hcl
 .terraform.tfstate.backup
 secret.auto.tfvars
+id_rsa_azure
+id_rsa_azure.pub
 
 commands.txt
 

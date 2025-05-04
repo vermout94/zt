@@ -5,7 +5,7 @@ resource "azurerm_monitor_action_group" "email_alerts" {
 
   email_receiver {
     name                    = "admin"
-    email_address           = "" # Replace with your email
+    email_address           = var.email # Replace with your email
     use_common_alert_schema = true
   }
 }
@@ -35,6 +35,6 @@ resource "azurerm_monitor_scheduled_query_rules_alert" "resource_delete_alert" {
   }
 
   action {
-    action_group = azurerm_monitor_action_group.email_alerts.id
+    action_group = [azurerm_monitor_action_group.email_alerts.id]
   }
 }

@@ -23,3 +23,7 @@ output "demo_users_group_id" {
   description = "The Object ID of the Azure AD group for demo users."
   value       = azuread_group.demo_users.id
 }
+output "firewall_private_ip" {
+  value = azurerm_firewall.firewall.ip_configuration[0].private_ip_address
+}
+

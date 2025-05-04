@@ -112,7 +112,7 @@ resource "azurerm_network_security_rule" "web_allow_ssh" {
 resource "azurerm_network_security_rule" "db_allow_sql" {
   resource_group_name         = azurerm_resource_group.rg.name
   name                        = "Allow-SQL-From-Web"
-  priority                    = 100
+  priority                    = 120
   direction                   = "Inbound"
   access                      = "Allow"
   protocol                    = "Tcp"
@@ -123,10 +123,26 @@ resource "azurerm_network_security_rule" "db_allow_sql" {
   network_security_group_name = azurerm_network_security_group.db_nsg.name
 }
 
+# Uncomment this block if you want to allow SSH from Web VM to DB VM
+# This is not recommended in a Zero Trust model, but included for demonstration.
+# resource "azurerm_network_security_rule" "db_allow_ssh" {
+#   resource_group_name         = azurerm_resource_group.rg.name
+#   name                        = "Allow-SSH-From-WebVM"
+#   priority                    = 130
+#   direction                   = "Inbound"
+#   access                      = "Allow"
+#   protocol                    = "Tcp"
+#   source_address_prefix       = local.subnet_prefixes.WebSubnet
+#   destination_address_prefix  = "*"
+#   destination_port_range      = "22"
+#   source_port_range           = "*"
+#   network_security_group_name = azurerm_network_security_group.db_nsg.name
+# }
+
 resource "azurerm_network_security_rule" "db_deny_web_all" {
   resource_group_name         = azurerm_resource_group.rg.name
   name                        = "Deny-OtherFrom-Web"
-  priority                    = 200
+  priority                    = 140
   direction                   = "Inbound"
   access                      = "Deny"
   protocol                    = "*"
@@ -137,10 +153,11 @@ resource "azurerm_network_security_rule" "db_deny_web_all" {
   network_security_group_name = azurerm_network_security_group.db_nsg.name
 }
 
+
 resource "azurerm_network_security_rule" "db_deny_all" {
   resource_group_name         = azurerm_resource_group.rg.name
   name                        = "Deny-All-Others"
-  priority                    = 300
+  priority                    = 500
   direction                   = "Inbound"
   access                      = "Deny"
   protocol                    = "*"
@@ -185,7 +202,9 @@ resource "azurerm_firewall" "firewall" {
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   sku_name            = "AZFW_VNet"
-  sku_tier            = "Basic"
+  sku_tier            = "Standard"
+
+  firewall_policy_id = azurerm_firewall_policy.fw_policy.id
 
   ip_configuration {
     name                 = "fw-config"
@@ -197,82 +216,195 @@ resource "azurerm_firewall" "firewall" {
     subnet_id            = azurerm_subnet.firewall_mgmt.id
     public_ip_address_id = azurerm_public_ip.fw_mgmt_public_ip.id
   }
-  dns_servers = ["8.8.8.8", "8.8.4.4"] # Google's public DNS servers
-  tags        = { Environment = "Demo" }
+  tags = { Environment = "Demo" }
 }
 
-resource "azurerm_firewall_network_rule_collection" "allow_all_outbound" {
+resource "azurerm_virtual_network_dns_servers" "vnet_dns" {
+  virtual_network_id = azurerm_virtual_network.vnet.id
+
+  dns_servers = [
+    azurerm_firewall.firewall.ip_configuration[0].private_ip_address
+  ]
+
+  depends_on = [
+    azurerm_firewall.firewall
+  ]
+}
+
+resource "azurerm_firewall_policy" "fw_policy" {
+  name                = "ZeroTrustFirewallPolicy"
   resource_group_name = azurerm_resource_group.rg.name
-  azure_firewall_name = azurerm_firewall.firewall.name
-  name                = "AllowAllOut"
-  priority            = 100
-  action              = "Allow"
-  #   rule {
-  #     name                  = "AllowAllOutRule"
-  #     protocols             = ["Any"]
-  #     source_addresses      = ["*"]
-  #     destination_addresses = ["*"]
-  #     destination_ports     = ["*"]
-  #   }
-  rule {
-    name                  = "Allow-DNS-Google"
-    protocols             = ["UDP"]
-    source_addresses      = ["*"]
-    destination_addresses = ["8.8.8.8", "8.8.4.4"]
-    destination_ports     = ["53"]
+  location            = azurerm_resource_group.rg.location
+
+  sku = "Standard"
+
+  threat_intelligence_mode = "Alert"
+
+  dns {
+    proxy_enabled = true
+    servers       = ["8.8.8.8", "8.8.4.4"]
   }
 
-  rule {
-    name              = "Allow-Microsoft-Updates"
-    protocols         = ["TCP"]
-    source_addresses  = ["*"]
-    destination_fqdns = ["windowsupdate.microsoft.com", "update.microsoft.com"]
-    destination_ports = ["80", "443"]
+  private_ip_ranges = [
+    "10.0.0.0/8"
+  ]
+}
+
+
+resource "azurerm_firewall_policy_rule_collection_group" "fw_policy_collection" {
+  name               = "ZeroTrustPolicyCollection"
+  firewall_policy_id = azurerm_firewall_policy.fw_policy.id
+  priority           = 150
+
+  network_rule_collection {
+    name     = "AllowInternalMySQL"
+    priority = 150
+    action   = "Allow"
+
+    rule { #Web to DB IN
+      name                  = "AllowMySQLInternal"
+      protocols             = ["TCP"]
+      source_addresses      = ["10.0.1.0/24"]
+      destination_addresses = ["10.0.2.0/24"]
+      destination_ports     = ["3306"]
+    }
+    rule { #DB to Web OUT
+      name                  = "AllowMySQLOutbound"
+      protocols             = ["TCP"]
+      source_addresses      = ["10.0.1.0/24"]
+      destination_addresses = ["10.0.2.0/24"]
+      destination_ports     = ["3306"]
+    }
+    rule {
+      name                  = "AllowDNS"
+      protocols             = ["UDP"]
+      source_addresses      = ["*"]
+      destination_addresses = ["8.8.8.8", "8.8.4.4"]
+      destination_ports     = ["53"]
+    }
+    # only for testing purposes
+    # rule { #WebVM to DBVM
+    #   name                  = "AllowSSHFromWebVM"
+    #   protocols             = ["TCP"]
+    #   source_addresses      = ["10.0.1.0/24"]
+    #   destination_addresses = ["10.0.2.0/24"]
+    #   destination_ports     = ["22"]
+    # }
+    # rule {
+    #   name              = "Allow-Ubuntu"
+    #   protocols         = ["TCP"]
+    #   source_addresses  = ["*"]
+    #   destination_fqdns = ["azure.archive.ubuntu.com", "security.ubuntu.com"]
+    #   destination_ports = ["80", "443"]
+    # }
   }
 
-  rule {
-    name              = "Allow-Google-Services"
-    protocols         = ["TCP"]
-    source_addresses  = ["*"]
-    destination_fqdns = ["www.google.com", "accounts.google.com"]
-    destination_ports = ["80", "443"]
+  application_rule_collection {
+    name     = "AllowOutboundWeb"
+    priority = 300
+    action   = "Allow"
+
+    rule {
+      name              = "Allow-Google"
+      source_addresses  = ["*"]
+      destination_fqdns = ["www.google.com", "*.google.com"]
+      protocols {
+        port = "443"
+        type = "Https"
+      }
+    }
+    rule {
+      name              = "Allow-Technikum"
+      source_addresses  = ["*"]
+      destination_fqdns = ["www.technikum-wien.at"]
+      protocols {
+        port = "443"
+        type = "Https"
+      }
+    }
+    rule {
+      name              = "Allow-Microsoft"
+      source_addresses  = ["*"]
+      destination_fqdns = ["windowsupdate.microsoft.com", "update.microsoft.com"]
+      protocols {
+        port = "443"
+        type = "Https"
+      }
+    }
+    rule {
+      name              = "Allow-MS-Packages"
+      source_addresses  = ["*"]
+      destination_fqdns = ["packages.microsoft.com", "download.microsoft.com", "*.azureedge.net", "login.microsoftonline.com"]
+      protocols {
+        port = "443"
+        type = "Https"
+      }
+    }
+    rule {
+      name             = "Allow-Ubuntu-Repos"
+      source_addresses = ["*"]
+      destination_fqdns = [
+        "azure.archive.ubuntu.com",
+        "security.ubuntu.com"
+      ]
+      protocols {
+        port = "80"
+        type = "Http"
+      }
+      protocols {
+        port = "443"
+        type = "Https"
+      }
+    }
   }
 
-  rule {
-    name              = "Allow-Technikum-Wien"
-    protocols         = ["TCP"]
-    source_addresses  = ["*"]
-    destination_fqdns = ["www.technikum-wien.at"]
-    destination_ports = ["80", "443"]
+  application_rule_collection {
+    name     = "DenyAllOutboundApp"
+    priority = 500
+    action   = "Deny"
+
+    rule {
+      name              = "DenyAllFQDN"
+      source_addresses  = ["*"]
+      destination_fqdns = ["*"]
+      protocols {
+        type = "Http"
+        port = "80"
+      }
+      protocols {
+        type = "Https"
+        port = "443"
+      }
+    }
+  }
+
+  nat_rule_collection {
+    name     = "DNAT-Access"
+    priority = 160
+    action   = "Dnat"
+
+    rule {
+      name                = "DNAT-HTTP"
+      protocols           = ["TCP"]
+      source_addresses    = ["*"]
+      destination_address = azurerm_public_ip.fw_public_ip.ip_address
+      destination_ports   = ["80"]
+      translated_address  = azurerm_network_interface.web_nic.private_ip_address
+      translated_port     = "80"
+    }
+
+    rule {
+      name                = "DNAT-SSH"
+      protocols           = ["TCP"]
+      source_addresses    = ["*"]
+      destination_address = azurerm_public_ip.fw_public_ip.ip_address
+      destination_ports   = ["22"]
+      translated_address  = azurerm_network_interface.web_nic.private_ip_address
+      translated_port     = "22"
+    }
   }
 }
 
-resource "azurerm_firewall_nat_rule_collection" "fw_dnat" {
-  resource_group_name = azurerm_resource_group.rg.name
-  azure_firewall_name = azurerm_firewall.firewall.name
-  name                = "DNAT-Web"
-  priority            = 110
-  action              = "Dnat"
-
-  rule {
-    name                  = "DNAT-HTTP"
-    source_addresses      = ["*"]
-    destination_addresses = [azurerm_public_ip.fw_public_ip.ip_address]
-    destination_ports     = ["80"]
-    protocols             = ["TCP"]
-    translated_address    = azurerm_network_interface.web_nic.private_ip_address
-    translated_port       = "80"
-  }
-  rule {
-    name                  = "DNAT-SSH"
-    source_addresses      = ["*"]
-    destination_addresses = [azurerm_public_ip.fw_public_ip.ip_address]
-    destination_ports     = ["22"]
-    protocols             = ["TCP"]
-    translated_address    = azurerm_network_interface.web_nic.private_ip_address
-    translated_port       = "22"
-  }
-}
 
 // --------------------------------------------------------------------------------
 // Route Tables
@@ -281,8 +413,7 @@ resource "azurerm_route_table" "udr" {
   name                = "ZeroTrust-RouteTable"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-
-  tags = { Purpose = "ForceTunnelToFirewall" }
+  tags                = { Purpose = "ForceTunnelToFirewall" }
 }
 
 resource "azurerm_route" "default_to_firewall" {
@@ -297,6 +428,7 @@ resource "azurerm_route" "default_to_firewall" {
 resource "azurerm_subnet_route_table_association" "web_udr_assoc" {
   subnet_id      = azurerm_subnet.web.id
   route_table_id = azurerm_route_table.udr.id
+  depends_on     = [azurerm_route.default_to_firewall]
 }
 
 resource "azurerm_subnet_route_table_association" "db_udr_assoc" {
