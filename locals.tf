@@ -9,13 +9,13 @@ locals {
 
   # render cloud‑init for WebVM
   webvm_cloudinit = templatefile("${path.module}/scripts/webvm-cloudinit.tpl", {
-    db_ip                 = local.db_ip
-    fw_pub_ip             = local.fw_pub_ip
-    fw_priv_ip            = local.fw_priv_ip
-    admin_username        = var.admin_username
-    webvm_private_key     = local.webvm_private_key
-    webvm_private_key_b64 = local.webvm_private_key_b64
-    webvm_public_key      = local.webvm_public_key
+    db_ip                      = local.db_ip
+    fw_pub_ip                  = local.fw_pub_ip
+    fw_priv_ip                 = local.fw_priv_ip
+    admin_username             = var.admin_username
+    webvm_private_key          = local.webvm_private_key
+    webvm_private_key_b64      = local.webvm_private_key_b64
+    webvm_public_key           = local.webvm_public_key
     log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.workspace_id
   })
 

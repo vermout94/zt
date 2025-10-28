@@ -9,7 +9,7 @@ resource "azuread_group" "demo_users" {
 }
 
 // --------------------------------------------------------------------------------
-// Lookup Advisor User Object ID via Azure AD
+// Lookup User Object ID via Azure AD
 // --------------------------------------------------------------------------------
 
 data "azuread_user" "advisor" {
@@ -18,7 +18,7 @@ data "azuread_user" "advisor" {
 
 data "azuread_user" "student" {
   user_principal_name = var.student_email
-  
+
 }
 
 // --------------------------------------------------------------------------------
